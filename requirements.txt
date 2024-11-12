@@ -1,0 +1,9 @@
+streamlit
+whisper
+shutil
+glob
+time
+langchain
+langchain_community
+hashlib
+dotenv
