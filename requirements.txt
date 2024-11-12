@@ -1,9 +1,8 @@
 streamlit
-whisper
-shutil
-glob
-time
+git+https://github.com/openai/whisper.git
 langchain
 langchain_community
-hashlib
-dotenv
+unstructured
+sentence-transformers
+chromadb
+unstructured[docx]
