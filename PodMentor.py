@@ -24,6 +24,9 @@ from langchain.vectorstores import Chroma
 from langchain.chains.question_answering import load_qa_chain
 from langchain_community.document_loaders import TextLoader
 import langchain_community
+import subprocess
+import torch
+from torch.quantization import quantize_dynamic
 
 print("Start Title")
 st.title("PodMentor – Interactive knowledge from your podcasts & docs. ")
@@ -41,17 +44,20 @@ repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
 @st.cache_resource 
 def load_models():
     print("Start loading models",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
-    model = whisper.load_model("turbo")
-    print(type(model))
+    whisperTiny = whisper.load_model("tiny").half()
+    whisperTiny = whisperTiny.to(dtype=torch.float32)
+    model_quantized = quantize_dynamic(whisperTiny, {torch.nn.Linear}, dtype=torch.qint8)  
+    torch.set_num_threads(4) 
+    print(type(model_quantized))
     print("End loading models",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))    
-    return model
+    return model_quantized
     
 def load_docs(directory: str):
     """
     Load documents from the given directory.
     """
     print("load_docs start:",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
-    loader = DirectoryLoader(directory,use_multithreading=True)
+    loader = DirectoryLoader(directory,use_multithreading=True,glob="*.txt")
     documents = loader.load()
     print("load_docs end:",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
     return documents
@@ -85,6 +91,7 @@ def loadWhisperTurboModel():
     whisperSModel = whisper.load_model("turbo", download_root="C:\\Users\\balasubramanians\\.cache\\whisper")
     print("loadWhisperTurboModel end:",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
     return whisperSModel
+    
     
 def startup_event():
     """
@@ -164,6 +171,34 @@ def start_chatbot():
     
     QA(db,chain)
 
+def convert_mp4_to_wav(input_file, output_file, sample_rate=16000):
+    """
+    Convert an .mp4 file to .wav format using ffmpeg.
+
+    Parameters:
+    - input_file (str): Path to the input .mp4 file.
+    - output_file (str): Path to the output .wav file.
+    - sample_rate (int): Desired sample rate for the output .wav file.
+    """
+    command = [
+        'ffmpeg',
+        '-i', input_file,             # Input file
+        '-ar', str(sample_rate),       # Set the sample rate
+        '-ac', '1',                    # Convert to mono (optional, remove if stereo is needed)
+        '-sample_fmt', 's16',         # 16-bit PCM format
+        output_file                    # Output file
+    ]
+    
+    try:
+        subprocess.run(command, check=True)
+        print(f"@Conversion complete: {output_file}")
+    except subprocess.CalledProcessError as e:
+        print("Error during conversion:", e)
+        
+def transcribe(model,filepath):
+    result = model.transcribe(filepath,language="en", without_timestamps=True)
+    return result
+            
 def callback(content_type:str):
     st.session_state.button_clicked = True
     curr_dir=""
@@ -187,7 +222,8 @@ def callback(content_type:str):
                 with open(file_path, 'wb') as temp:
                     if fileExt == ".mp3" or fileExt ==".mp4":
                         print("transcribe start:",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
-                        transcription = model.transcribe(file.name)
+                        convert_mp4_to_wav(file.name,upload_directory+"/"+"podcast.wav")
+                        transcription = transcribe(model,upload_directory+"/"+"podcast.wav")
                         print("transcribe end:",datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S'))
                         filename = file.name.replace(fileExt,'')
                         filename = f"{upload_directory}/{filename}"+'.txt'
